@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PBOC 公开市场买断式逆回购业务公告</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .card-text {
+            white-space: pre-wrap; /* Preserve formatting */
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container py-5">
+        <div class="text-center mb-4">
+            <h1 class="h3 mb-2">公开市场买断式逆回购业务公告</h1>
+            {% if latest_crawl_time %}
+                <div id="statsInfo" class="text-muted small mb-3">
+                    已爬取 {{ announcements|length }} 条内容 | 采集时间: {{ latest_crawl_time }}
+                </div>
+            {% else %}
+                <div id="statsInfo" class="text-muted small mb-3"></div>
+            {% endif %}
+            <form id="scrapeForm" class="d-inline-block">
+                <button type="submit" class="btn btn-primary">
+                    <span class="spinner-border spinner-border-sm d-none" role="status" aria-hidden="true"></span>
+                    立即爬取更新
+                </button>
+            </form>
+        </div>
+
+        {% if announcements %}
+            <div class="row row-cols-1 row-cols-md-2 g-4">
+                {% for item in announcements %}
+                <div class="col">
+                    <div class="card h-100 shadow-sm">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="badge bg-secondary">公告</span>
+                                <span class="text-muted small ms-2">{{ item['publish_date'] }}</span>
+                            </div>
+                            <a href="{{ item['link'] }}" target="_blank" class="btn btn-sm btn-outline-secondary">原文链接</a>
+                        </div>
+                        <div class="card-body">
+                            <h5 class="card-title">{{ item['title'] }}</h5>
+                            <hr>
+                            <p class="card-text text-secondary small">{{ item['content'] }}</p>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="alert alert-info text-center">
+                暂无数据，请点击右上角“立即爬取更新”按钮。
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Modal -->
+    <div class="modal fade" id="resultModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">爬取结果</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="modalMessage"></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" onclick="location.reload()">确定并刷新</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.getElementById('scrapeForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const btn = this.querySelector('button');
+            const originalText = btn.innerHTML;
+            
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 爬取中...';
+
+            fetch('/scrape', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                const modal = new bootstrap.Modal(document.getElementById('resultModal'));
+                const msgEl = document.getElementById('modalMessage');
+                
+                if (data.status === 'success') {
+                    msgEl.innerHTML = `本次更新：<strong>${data.new_count}</strong> 条<br>总记录数：<strong>${data.total_count}</strong> 条`;
+                    
+                    // Update stats immediately
+                    const statsInfo = document.getElementById('statsInfo');
+                    if (statsInfo) {
+                        const timeStr = data.latest_crawl_time || '未知';
+                        statsInfo.innerHTML = `已爬取 ${data.total_count} 条内容 | 采集时间: ${timeStr}`;
+                        // Add a flash effect to indicate update
+                        statsInfo.classList.add('bg-warning', 'text-dark', 'p-1', 'rounded');
+                        setTimeout(() => {
+                            statsInfo.classList.remove('bg-warning', 'text-dark', 'p-1', 'rounded');
+                        }, 1000);
+                    }
+                } else {
+                    msgEl.innerHTML = `爬取失败：${data.message}`;
+                }
+                
+                modal.show();
+            })
+            .catch(error => {
+                alert('请求失败，请稍后重试');
+                console.error('Error:', error);
+            })
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            });
+        });
+    </script>
+</body>
+</html>
