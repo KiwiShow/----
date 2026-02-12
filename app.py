@@ -2,22 +2,32 @@ from flask import Flask, render_template, request, jsonify
 import sqlite3
 import os
 import datetime
+import crawler  # Top-level import is safe now
 
 app = Flask(__name__)
 DB_PATH = "data.db"
 CRAWL_TIME_FILE = "last_crawl_time.txt"
 
+def get_current_time_str():
+    """Returns current UTC+8 time string."""
+    return (datetime.datetime.utcnow() + datetime.timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
+
 def get_last_crawl_time():
     if os.path.exists(CRAWL_TIME_FILE):
-        with open(CRAWL_TIME_FILE, 'r') as f:
-            return f.read().strip()
+        try:
+            with open(CRAWL_TIME_FILE, 'r') as f:
+                return f.read().strip()
+        except Exception:
+            return None
     return None
 
 def update_last_crawl_time():
-    # Use UTC+8
-    now = (datetime.datetime.utcnow() + datetime.timedelta(hours=8)).strftime('%Y-%m-%d %H:%M:%S')
-    with open(CRAWL_TIME_FILE, 'w') as f:
-        f.write(now)
+    now = get_current_time_str()
+    try:
+        with open(CRAWL_TIME_FILE, 'w') as f:
+            f.write(now)
+    except Exception as e:
+        print(f"Error writing crawl time: {e}")
     return now
 
 def get_db_connection():
@@ -34,24 +44,30 @@ def index():
         # Get latest crawl time from file, fallback to DB
         latest_crawl_time = get_last_crawl_time()
         if not latest_crawl_time and announcements:
-            # Find the max crawled_at
-            latest_crawl_time = max(row['crawled_at'] for row in announcements)
+            # Find the max crawled_at from records if file is missing
+            latest_crawl_time = max((row['crawled_at'] for row in announcements if row['crawled_at']), default=None)
     except sqlite3.OperationalError:
         announcements = []
         latest_crawl_time = None
-    conn.close()
+    finally:
+        conn.close()
+        
     return render_template('index.html', announcements=announcements, latest_crawl_time=latest_crawl_time)
 
 @app.route('/scrape', methods=['POST'])
 def trigger_scrape():
-    import crawler
     try:
+        # Run crawler
         new_records = crawler.run_crawler()
         
-        # Get total count and latest crawl time
+        # Get total count
         conn = get_db_connection()
-        total_records = conn.execute('SELECT COUNT(*) FROM announcements').fetchone()[0]
-        conn.close()
+        try:
+            total_records = conn.execute('SELECT COUNT(*) FROM announcements').fetchone()[0]
+        except sqlite3.OperationalError:
+            total_records = 0
+        finally:
+            conn.close()
         
         # Update and get current time
         current_time = update_last_crawl_time()
